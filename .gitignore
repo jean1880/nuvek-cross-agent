@@ -1,0 +1,15 @@
+/target
+/dist
+
+# Local [patch] overrides and other machine-specific Cargo settings.
+/.cargo/config.toml
+
+# OS and editor cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- nuvek-cross-agent icon. Original artwork for nuvek-cross-agent, built on the author's
+       eight-tooth gear mark: the gear at the centre and three agents, one per accent, handing
+       a prompt on to each other around it. -->
+  <defs>
+    <linearGradient id="xa-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a08cff"/>
+      <stop offset="1" stop-color="#5a44c8"/>
+    </linearGradient>
+    <linearGradient id="xa-screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2442"/>
+      <stop offset="1" stop-color="#181425"/>
+    </linearGradient>
+    <linearGradient id="xa-gear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a29ea4"/>
+      <stop offset="1" stop-color="#8a868c"/>
+    </linearGradient>
+  </defs>
+  <!-- depth: the same tile, dropped and darkened (GNOME HIG front-facing depth) -->
+  <rect x="12" y="17" width="104" height="104" rx="18" fill="#0d0a16" opacity="0.55"/>
+  <!-- tile rim -->
+  <rect x="12" y="12" width="104" height="104" rx="18" fill="url(#xa-rim)"/>
+  <!-- screen -->
+  <rect x="18" y="18" width="92" height="92" rx="13" fill="url(#xa-screen)"/>
+  <!-- soft top highlight -->
+  <rect x="26" y="21" width="76" height="2" rx="1" fill="#ffffff" opacity="0.07"/>
+  <!-- hand-offs: each agent passes on to the next, clockwise -->
+  <g fill="none" stroke-width="5" stroke-linecap="round">
+    <path stroke="#e8846b" d="M75.63 34.05A34 34 0 0 1 95.4 70.4"/>
+    <path stroke="#5b9cf6" d="M85.85 92.05A34 34 0 0 1 45.2 94.6"/>
+    <path stroke="#4cc38a" d="M30.52 71.90A34 34 0 0 1 49.6 35.2"/>
+  </g>
+  <g stroke-linejoin="round" stroke-width="4">
+    <path fill="#e8846b" stroke="#e8846b" d="M96.99 74.23L103.85 69.49L91.89 68.44Z"/>
+    <path fill="#5b9cf6" stroke="#5b9cf6" d="M40.38 90.46L41.06 98.77L47.94 88.94Z"/>
+    <path fill="#4cc38a" stroke="#4cc38a" d="M54.63 33.32L47.10 29.75L52.17 40.62Z"/>
+  </g>
+  <!-- the gear: eight trapezoid teeth and a hollow hub -->
+  <path transform="translate(64 66) scale(0.57)" fill="url(#xa-gear)" fill-rule="evenodd"
+        d="M-7.00 -29.17 L-5.91 -39.56 L5.91 -39.56 L7.00 -29.17 A30 30 0 0 1 15.67 -25.58 L23.79 -32.15 L32.15 -23.79 L25.58 -15.67 A30 30 0 0 1 29.17 -7.00 L39.56 -5.91 L39.56 5.91 L29.17 7.00 A30 30 0 0 1 25.58 15.67 L32.15 23.79 L23.79 32.15 L15.67 25.58 A30 30 0 0 1 7.00 29.17 L5.91 39.56 L-5.91 39.56 L-7.00 29.17 A30 30 0 0 1 -15.67 25.58 L-23.79 32.15 L-32.15 23.79 L-25.58 15.67 A30 30 0 0 1 -29.17 7.00 L-39.56 5.91 L-39.56 -5.91 L-29.17 -7.00 A30 30 0 0 1 -25.58 -15.67 L-32.15 -23.79 L-23.79 -32.15 L-15.67 -25.58 A30 30 0 0 1 -7.00 -29.17 Z M0 -13 A13 13 0 1 0 0 13 A13 13 0 1 0 0 -13 Z"/>
+  <!-- the three agents -->
+  <circle cx="64" cy="32" r="8.5" fill="#e8846b"/>
+  <circle cx="93.44" cy="83" r="8.5" fill="#5b9cf6"/>
+  <circle cx="34.56" cy="83" r="8.5" fill="#4cc38a"/>
+</svg>

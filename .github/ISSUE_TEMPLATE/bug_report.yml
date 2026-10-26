@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-forms.json
+name: Bug report
+description: Something in cross-agent doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. A bug that can be reproduced gets fixed first.
+
+        - **A security problem?** Don't file it here. Use [private vulnerability reporting](https://github.com/jean1880/nuvek-cross-agent/security/advisories/new) (see [SECURITY.md](https://github.com/jean1880/nuvek-cross-agent/blob/master/SECURITY.md)).
+        - **A problem in `claude`, `agy` or `codex` itself?** If it also happens when you run that CLI directly, report it to its vendor.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched the [open and closed issues](https://github.com/jean1880/nuvek-cross-agent/issues?q=is%3Aissue) and found no report of this.
+          required: true
+        - label: I removed API keys, tokens, hostnames and anything else private from what I paste below.
+          required: true
+
+  - type: dropdown
+    id: subcommand
+    attributes:
+      label: Subcommand
+      options:
+        - agy
+        - claude
+        - codex
+        - status
+        - select
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      description: With the prompt replaced by a placeholder if it is private.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The output and the exit code (`echo $?`).
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`cross-agent --version`, or the commit for a source build."
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: harness-versions
+    attributes:
+      label: Harness CLI versions
+      description: For `agy`, `claude` or `codex`: the version of the CLI involved.
+      render: text
+
+  - type: input
+    id: system
+    attributes:
+      label: Distribution
+      placeholder: "Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else

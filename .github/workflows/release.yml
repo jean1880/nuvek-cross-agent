@@ -1,0 +1,95 @@
+name: Release
+
+# A v* tag builds a static x86_64 musl binary and publishes it, with SHA256SUMS and the release
+# notes from docs/releases/<tag>.md, as a GitHub Release. Nothing runs unless the repository
+# variable PUBLISH is 'true'.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (x86_64 musl)
+    if: vars.PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the tag matches Cargo.toml and the notes exist
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ "$tag" != "v$version" ]]; then
+            echo "::error::Tag $tag does not match Cargo.toml version $version (expected v$version)"
+            exit 1
+          fi
+          if [[ ! -s "docs/releases/$tag.md" ]]; then
+            echo "::error::Missing release notes: docs/releases/$tag.md"
+            exit 1
+          fi
+
+      - name: Install the musl target
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Check the binary is statically linked
+        run: |
+          out="$(file target/x86_64-unknown-linux-musl/release/cross-agent)"
+          echo "$out"
+          grep -qE 'statically linked|static-pie linked' <<<"$out"
+
+      - name: Name the binary for the release
+        run: |
+          mkdir dist
+          cp target/x86_64-unknown-linux-musl/release/cross-agent "dist/cross-agent-${GITHUB_REF_NAME}-x86_64-linux-musl"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish
+    if: vars.PUBLISH == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: binary
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --verify-tag \
+            --title "cross-agent ${TAG#v}" \
+            --notes-file "docs/releases/$TAG.md"

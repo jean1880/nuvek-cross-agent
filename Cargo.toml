@@ -1,0 +1,55 @@
+[package]
+name = "cross-agent"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/jean1880/nuvek-cross-agent"
+readme = "README.md"
+# Installed from release binaries, the .deb or `cargo install --git`, not from crates.io.
+publish = false
+description = "Cross-harness delegation CLI: dispatch headless subagents between Antigravity (Gemini), Claude Code (Anthropic) and Codex (OpenAI, read-only) with timeout bounds and rate-limit detection."
+keywords = ["cli", "agents", "claude", "codex", "delegation"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace]
+members = ["."]
+resolver = "2"
+
+# The dependency set, pinned in one place.
+[workspace.dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+
+[dependencies]
+clap.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+nuvek-core = { version = "1", features = ["digest"] }
+
+[[bin]]
+name = "cross-agent"
+path = "src/main.rs"
+
+[package.metadata.deb]
+maintainer = "Jean-Luc Desroches <jean1880@users.noreply.github.com>"
+copyright = "2026, Jean-Luc Desroches"
+license-file = ["LICENSE", "0"]
+# $auto runs dpkg-shlibdeps against the built binary and derives the library dependencies.
+depends = "$auto"
+extended-description = """
+Delegates a prompt to Antigravity (agy), Claude Code or Codex in headless mode,
+with a wall-clock timeout, rate-limit detection (exit 75) and an optional JSON
+receipt. Also reports which models each harness offers and picks one for a task
+by capability tags, tier and subscription headroom."""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/cross-agent", "usr/bin/cross-agent", "755"],
+    ["README.md", "usr/share/doc/cross-agent/README.md", "644"],
+]
+
+[profile.release]
+lto = "thin"
+strip = true
