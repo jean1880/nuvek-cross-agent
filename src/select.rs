@@ -10,6 +10,11 @@
 //! has `ok` or `unknown` headroom (`low` / `exhausted` are out). Survivors rank trusted readings
 //! first by lowest load; an unknown or stale reading ranks after every trusted one. Ties prefer a
 //! harness other than `--from`.
+//!
+//! Local model servers are only a recommendation: when a free, delegation-enabled Local profile
+//! has a model of the task's tier with every required tag, the result's `free_local` names it with
+//! `via: "agent-terminal cross_agent_spawn"` (the only thing that can run it), and `selected` stays
+//! the best model this CLI can launch. `null` when none fits.
 
 use crate::status::{self, DRIVERS};
 use anyhow::{bail, Result};
@@ -116,6 +121,51 @@ fn order(a: &Candidate, b: &Candidate, from: Option<&str>) -> Ordering {
 
 fn reject(driver: &str, row: &Value, why: String) -> Value {
     json!({"driver": driver, "model_id": row["id"], "reason": why})
+}
+
+/// How a free Local model is run: this CLI cannot dispatch to one.
+pub const LOCAL_VIA: &str = "agent-terminal cross_agent_spawn";
+
+/// A recommendation, never a dispatchable pick: the first model, in profile then model order, of
+/// an enabled Local profile that is free and available for delegation, whose tier is the task's
+/// and that carries every required tag (and `high-effort` only when asked for). A Local model has
+/// no effort control, so a request for an explicit effort has none. `null` when nothing fits.
+fn free_local(s: &Value, req: &Request) -> Value {
+    if req.effort.is_some() {
+        return Value::Null;
+    }
+    for p in s["drivers"][status::LOCAL]["profiles"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if p["cost"] != "free" || p["available_for_delegation"] != true {
+            continue;
+        }
+        for m in p["models"].as_array().into_iter().flatten() {
+            let have: Vec<String> = strings(&m["tags"])
+                .iter()
+                .map(|t| t.to_lowercase())
+                .collect();
+            let wants_high = req.tags.iter().any(|t| t == "high-effort");
+            if m["tier"].as_str() == Some(req.tier.as_str())
+                && req.tags.iter().all(|t| have.contains(t))
+                && (wants_high || !have.iter().any(|t| t == "high-effort"))
+            {
+                return json!({
+                    "profile_id": p["id"],
+                    "profile_name": p["name"],
+                    "model_id": m["id"],
+                    "tier": m["tier"],
+                    "tags": m["tags"],
+                    "tags_source": m["tags_source"],
+                    "cost": "free",
+                    "via": LOCAL_VIA,
+                });
+            }
+        }
+    }
+    Value::Null
 }
 
 /// Filter and rank the status document. Pure. An unknown tag is an error (a typo would otherwise
@@ -225,6 +275,7 @@ pub fn select(s: &Value, req: &Request) -> Result<Value> {
     Ok(json!({
         "request": {"tags": req.tags, "tier": req.tier, "effort": req.effort, "from": req.from},
         "selected": ranked.first().cloned(),
+        "free_local": free_local(s, req),
         "ranked": ranked,
         "rejected": rejected,
         "inputs": {"tags": s["tags"], "usage": s["usage"], "catalogue": s["catalogue"]},
@@ -258,6 +309,15 @@ pub fn render_text(r: &Value) -> String {
         Some(_) => out.push_str(&format!("selected: {}\n", launch(&r["selected"]))),
         None => out.push_str("selected: none\n"),
     }
+    if let Some(l) = r["free_local"].as_object() {
+        let get = |k: &str| l.get(k).and_then(Value::as_str).unwrap_or("?");
+        out.push_str(&format!(
+            "free local: {} on {} (cost free; run it with {}, this CLI cannot dispatch to it)\n",
+            get("model_id"),
+            get("profile_name"),
+            get("via")
+        ));
+    }
     for (i, c) in r["ranked"].as_array().into_iter().flatten().enumerate() {
         out.push_str(&format!("  {}. {}\n", i + 1, launch(c)));
     }
@@ -280,14 +340,7 @@ pub fn render_text(r: &Value) -> String {
 
 /// The command: read the three inputs, select, print. Exit 0 with a pick, [`EXIT_NONE`] without.
 pub fn run(json_out: bool, req: &Request) -> Result<i32> {
-    let dirs = status::Dirs::from_env();
-    let s = status::build(
-        &dirs,
-        &status::load(&dirs.tags()),
-        &status::load(&dirs.usage()),
-        &status::load(&dirs.catalogue()),
-        status::now_s(),
-    );
+    let s = status::snapshot(&status::Dirs::from_env());
     let r = select(&s, req)?;
     if json_out {
         println!("{}", serde_json::to_string_pretty(&r)?);
@@ -587,6 +640,108 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("no_eligible_effort"));
+    }
+
+    fn local_model(id: &str, tier: &str, tags: &[&str]) -> Value {
+        json!({"id": id, "tier": tier, "tags": tags, "best_for": null, "tags_source": "user"})
+    }
+
+    fn with_local(mut s: Value, profiles: Vec<Value>) -> Value {
+        s["drivers"]["local"] = json!({ "profiles": profiles });
+        s
+    }
+
+    fn local_profile(id: &str, cost: &str, delegable: bool, models: Vec<Value>) -> Value {
+        json!({"id": id, "name": format!("Name {id}"), "cost": cost,
+               "available_for_delegation": delegable, "models": models})
+    }
+
+    #[test]
+    fn a_free_local_model_is_recommended_beside_the_dispatchable_pick() {
+        let s = with_local(
+            doc([
+                ("claude", "ok", Some(0.1), vec![deep("opus")]),
+                ("agy", "ok", Some(0.2), vec![]),
+                ("codex", "ok", Some(0.3), vec![]),
+            ]),
+            vec![
+                // Metered, not delegable and wrong-tier profiles never qualify.
+                local_profile(
+                    "pm",
+                    "metered",
+                    true,
+                    vec![local_model("a", "deep", &["code"])],
+                ),
+                local_profile(
+                    "pn",
+                    "free",
+                    false,
+                    vec![local_model("b", "deep", &["code"])],
+                ),
+                local_profile(
+                    "pf",
+                    "free",
+                    true,
+                    vec![
+                        local_model("c", "fast", &["code"]),
+                        local_model("d", "deep", &["review"]),
+                        local_model("e", "deep", &["code", "high-effort"]),
+                        local_model("f", "deep", &["code", "review"]),
+                    ],
+                ),
+            ],
+        );
+        let r = select(&s, &req(&["code"], "deep", None, None)).unwrap();
+        // The dispatchable pick is unchanged.
+        assert_eq!(r["selected"]["driver"], "claude");
+        assert_eq!(picked(&r), ["claude"]);
+        let l = &r["free_local"];
+        assert_eq!(l["profile_id"], "pf");
+        assert_eq!(l["model_id"], "f");
+        assert_eq!(l["cost"], "free");
+        assert_eq!(l["via"], "agent-terminal cross_agent_spawn");
+        let text = render_text(&r);
+        assert_eq!(text.matches("free local:").count(), 1, "{text}");
+        assert!(text.contains("f on Name pf"), "{text}");
+        assert!(text.contains("cross_agent_spawn"), "{text}");
+        // high-effort is only recommended when asked for.
+        let mut s = s;
+        s["vocabulary"]["high-effort"] = json!("costly");
+        let r = select(&s, &req(&["code", "high-effort"], "deep", None, None)).unwrap();
+        assert_eq!(r["free_local"]["model_id"], "e");
+    }
+
+    #[test]
+    fn free_local_is_null_when_nothing_fits_and_never_changes_the_exit_state() {
+        let s = with_local(
+            doc([
+                ("claude", "exhausted", Some(0.99), vec![deep("opus")]),
+                ("agy", "ok", Some(0.2), vec![]),
+                ("codex", "ok", Some(0.3), vec![]),
+            ]),
+            vec![local_profile(
+                "pf",
+                "free",
+                true,
+                vec![local_model("c", "deep", &["code"])],
+            )],
+        );
+        // Nothing dispatchable, yet the recommendation is still reported; selected stays null.
+        let r = select(&s, &req(&["code"], "deep", None, None)).unwrap();
+        assert!(r["selected"].is_null());
+        assert_eq!(r["free_local"]["model_id"], "c");
+        // A Local model has no effort control, so an explicit effort has no recommendation.
+        let r = select(&s, &req(&["code"], "deep", Some("high"), None)).unwrap();
+        assert!(r["free_local"].is_null());
+        assert!(!render_text(&r).contains("free local"));
+        // No Local section at all (older document) is simply null.
+        let plain = doc([
+            ("claude", "ok", Some(0.1), vec![deep("opus")]),
+            ("agy", "ok", Some(0.2), vec![]),
+            ("codex", "ok", Some(0.3), vec![]),
+        ]);
+        let r = select(&plain, &req(&["code"], "deep", None, None)).unwrap();
+        assert!(r["free_local"].is_null());
     }
 
     #[test]

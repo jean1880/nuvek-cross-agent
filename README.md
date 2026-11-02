@@ -35,6 +35,9 @@ yourself.
 - An optional JSON receipt: outcome, exit code, duration, model and effort, a prompt digest and
   scrubbed output.
 - `status` and `select` rank the models each harness offers by capability tag, tier and headroom.
+  They also list your Local model servers (free or metered, from Agent Terminal's settings) and
+  honour your own model tags; `select` recommends a free Local model beside its pick as
+  `free_local`, which only Agent Terminal can run.
 - Secrets are scrubbed from logs, the ledger and receipts; the prompt itself is never stored.
 
 ## Requirements

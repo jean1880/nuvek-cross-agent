@@ -697,16 +697,9 @@ fn with_effort(mut args: Vec<String>, extra: Vec<String>) -> Vec<String> {
     args
 }
 
-/// `status`: reads three cache/config files; spawns nothing and writes nothing.
+/// `status`: reads the cache and config files; spawns nothing and writes nothing.
 fn print_status(json: bool) -> Result<()> {
-    let dirs = status::Dirs::from_env();
-    let s = status::build(
-        &dirs,
-        &status::load(&dirs.tags()),
-        &status::load(&dirs.usage()),
-        &status::load(&dirs.catalogue()),
-        status::now_s(),
-    );
+    let s = status::snapshot(&status::Dirs::from_env());
     if json {
         println!("{}", serde_json::to_string_pretty(&s)?);
     } else {

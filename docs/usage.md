@@ -36,11 +36,15 @@ cross-agent select --tag code --tier deep --from claude
 - **`--effort`** is a lowercase word (`low`, `medium`, `high`, ...). Claude Code takes it as
   `--effort`, Codex as a `model_reasoning_effort` config override, and agy in the model id, which
   must then be a catalogue id that offers that effort (see `status`).
-- **`status`** reads three files and spawns nothing: it lists each harness's models with their tags,
-  tier and `--model` value, and its subscription headroom.
+- **`status`** reads its input files and spawns nothing: it lists each harness's models with their
+  tags, tier and `--model` value, and its subscription headroom, plus your Local model servers
+  (`drivers.local.profiles` in `--json`) with their cost. See
+  [Local model servers](configuration.md#local-model-servers-and-your-own-tags).
 - **`select`** filters and ranks those models for a task: the tier must match, every `--tag` must be
   present, the model must offer the effort, and a harness with `low` or `exhausted` headroom is
-  left out. It exits 4 when nothing qualifies.
+  left out. It exits 4 when nothing qualifies. When a free Local model fits the same tags and tier,
+  `--json` also reports it as `free_local` (text output adds one `free local:` line). That is a
+  recommendation only: this CLI cannot run it; Agent Terminal's `cross_agent_spawn` can.
 
 A prompt is never written to a log or to the ledger: only its length and a digest are kept. The
 ledger, the logs and the `--json` receipt are scrubbed of secrets. Without `--json`, the delegate's
