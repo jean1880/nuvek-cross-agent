@@ -90,9 +90,9 @@ impl Extra {
     }
 }
 
-/// The user's tag file: `user_model_tags_path` from the settings (`~/` expanded against `home`),
-/// when it is absolute, else the default beside the settings.
-pub fn user_tags_path(dirs: &Dirs, config: &Loaded, home: &Path) -> PathBuf {
+/// The user's tag file: `user_model_tags_path` from the settings (`~/` expanded to the home
+/// directory), when it is absolute, else the default beside the settings.
+pub fn user_tags_path(dirs: &Dirs, config: &Loaded) -> PathBuf {
     let set = match config {
         Loaded::Ok(c) => c
             .get("user_model_tags_path")
@@ -101,12 +101,7 @@ pub fn user_tags_path(dirs: &Dirs, config: &Loaded, home: &Path) -> PathBuf {
             .filter(|s| !s.is_empty()),
         _ => None,
     };
-    let expanded = set.map(|s| match s.strip_prefix("~/") {
-        Some(rest) => home.join(rest),
-        None if s == "~" => home.to_path_buf(),
-        None => PathBuf::from(s),
-    });
-    match expanded {
+    match set.map(|s| PathBuf::from(nuvek_core::env::expand_home(s))) {
         Some(p) if p.is_absolute() => p,
         _ => dirs.user_tags_default(),
     }
@@ -115,7 +110,7 @@ pub fn user_tags_path(dirs: &Dirs, config: &Loaded, home: &Path) -> PathBuf {
 /// Read every input and assemble the status document.
 pub fn snapshot(dirs: &Dirs) -> Value {
     let config = load(&dirs.app_config());
-    let user_tags_path = user_tags_path(dirs, &config, &nuvek_core::env::home_dir());
+    let user_tags_path = user_tags_path(dirs, &config);
     let extra = Extra {
         user_tags: load(&user_tags_path),
         config,
@@ -216,9 +211,10 @@ fn lookup_in<'a>(
 ) -> Option<&'a Value> {
     let entries = tags.get("models")?.as_array()?;
     let fits = |e: &&Value| {
-        let d_ok = match e.get("driver").and_then(Value::as_str) {
-            Some(d) => d == driver,
-            None => true,
+        // Absent or null: any driver. Present but not a string: never matches.
+        let d_ok = match e.get("driver") {
+            None | Some(Value::Null) => true,
+            Some(d) => d.as_str() == Some(driver),
         };
         d_ok && e
             .get("match")
@@ -641,7 +637,17 @@ fn model_row(
     policy: Option<&Value>,
 ) -> Option<Value> {
     let id = m.get("id").and_then(Value::as_str)?;
-    let found = lookup(layers, driver, id, profile);
+    let found = lookup(layers, driver, id, profile).or_else(|| {
+        // Claude's `default` alias has no entry of its own: look up the model its description
+        // names first ("Sonnet 5.5 · ..."), as the app does.
+        if id != "default" {
+            return None;
+        }
+        let head = m.get("description")?.as_str()?.split('·').next()?.trim();
+        (!head.is_empty())
+            .then(|| lookup(layers, driver, head, profile))
+            .flatten()
+    });
     let entry = found.map(|(e, _)| e);
     let field = |k: &str| entry.and_then(|e| e.get(k)).cloned().unwrap_or(Value::Null);
     let efforts = strings(m.get("efforts"));
@@ -1306,23 +1312,20 @@ mod tests {
     #[test]
     fn user_tag_path_comes_from_the_settings_when_absolute() {
         let (d, dirs) = local_fixture("local-path");
-        let home = Path::new("/home/example");
+        let home = nuvek_core::env::home_dir();
         let cfg = |v: Value| Loaded::Ok(json!({ "user_model_tags_path": v }));
         let default = dirs.user_tags_default();
-        assert_eq!(user_tags_path(&dirs, &Loaded::Missing, home), default);
-        assert_eq!(user_tags_path(&dirs, &cfg(json!("  ")), home), default);
+        assert_eq!(user_tags_path(&dirs, &Loaded::Missing), default);
+        assert_eq!(user_tags_path(&dirs, &cfg(json!("  "))), default);
+        assert_eq!(user_tags_path(&dirs, &cfg(json!("rel/x.json"))), default);
+        assert_eq!(user_tags_path(&dirs, &cfg(json!(7))), default);
         assert_eq!(
-            user_tags_path(&dirs, &cfg(json!("rel/x.json")), home),
-            default
-        );
-        assert_eq!(user_tags_path(&dirs, &cfg(json!(7)), home), default);
-        assert_eq!(
-            user_tags_path(&dirs, &cfg(json!("/etc/example/t.json")), home),
+            user_tags_path(&dirs, &cfg(json!("/etc/example/t.json"))),
             Path::new("/etc/example/t.json")
         );
         assert_eq!(
-            user_tags_path(&dirs, &cfg(json!("~/t.json")), home),
-            Path::new("/home/example/t.json")
+            user_tags_path(&dirs, &cfg(json!("~/t.json"))),
+            home.join("t.json")
         );
         // End to end: the moved file is the one read.
         let moved = d.join("elsewhere/t.json");
@@ -1338,6 +1341,45 @@ mod tests {
         assert_eq!(s["user_tags"]["path"], moved.display().to_string());
         assert_eq!(s["user_tags"]["state"], "ok");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn default_alias_is_tagged_as_the_model_its_description_names() {
+        let layers_doc = json!({"version": 1, "models": [
+            {"match": "sonnet 5.5", "driver": "claude", "tier": "standard", "tags": ["code"]}]});
+        let layers = Layers {
+            user: None,
+            file: Some(&layers_doc),
+        };
+        let row = |id: &str, desc: Value| {
+            model_row(
+                &json!({"id": id, "description": desc}),
+                "claude",
+                layers,
+                None,
+                None,
+            )
+            .unwrap()
+        };
+        let d = row("default", json!("Sonnet 5.5 · Efficient for routine tasks"));
+        assert_eq!(d["tier"], "standard");
+        assert_eq!(d["tags_source"], "file");
+        assert!(row("default", json!(" · x"))["tier"].is_null());
+        assert!(row("default", Value::Null)["tier"].is_null());
+        // Only the `default` alias falls back.
+        assert!(row("other", json!("Sonnet 5.5 · x"))["tier"].is_null());
+    }
+
+    #[test]
+    fn an_entry_whose_driver_is_not_a_string_matches_no_driver() {
+        let doc = json!({"version": 1, "models": [
+            {"match": "m", "driver": 7, "tier": "deep"},
+            {"match": "m", "driver": ["local"], "tier": "deep"},
+            {"match": "m", "driver": null, "tier": "fast"}]});
+        let hit = lookup_in(&doc, "local", "m", None).unwrap();
+        assert_eq!(hit["tier"], "fast", "the malformed entries are skipped");
+        let only_bad = json!({"models": [{"match": "m", "driver": 7}]});
+        assert!(lookup_in(&only_bad, "local", "m", None).is_none());
     }
 
     #[test]
